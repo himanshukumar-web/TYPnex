@@ -1,0 +1,245 @@
+// TYPnex Authoritative Prisma Schema (PostgreSQL / Supabase)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  passwordHash      String
+  name              String
+  role              String    @default("USER") // "USER", "EMPLOYEE", "ADMIN"
+  isVerified        Boolean   @default(false)  // Blue tick status (Admin controlled)
+  isBlocked         Boolean   @default(false)
+  emailVerified     Boolean   @default(false)
+  otpCode           String?
+  otpExpiresAt      DateTime?
+  preferredLanguage String    @default("en")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+
+  profile             Profile?
+  conversations       Conversation[]
+  messagesSent        Message[]
+  attachments         Attachment[]
+  dailyUsages         DailyUsage[]
+  blockedRecord       BlockedUser?         @relation("BlockedTarget")
+  blockedActions      BlockedUser[]        @relation("BlockedByAdmin")
+  employeeRecord      Employee?
+  assignedUsers       EmployeeAssignment[] @relation("AssignedCustomer")
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+
+  @@index([email])
+  @@index([role])
+  @@index([deletedAt])
+}
+
+model Profile {
+  id                   String   @id @default(uuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  avatarUrl            String?
+  bio                  String?
+  themePreference      String   @default("light") // "light" or "dark"
+  notificationsEnabled Boolean  @default(true)
+  soundEnabled         Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model BlockedUser {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation("BlockedTarget", fields: [userId], references: [id], onDelete: Cascade)
+  blockedById String
+  blockedBy   User     @relation("BlockedByAdmin", fields: [blockedById], references: [id], onDelete: Cascade)
+  reason      String?
+  blockedAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Employee {
+  id                 String               @id @default(uuid())
+  userId             String               @unique
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department         String               @default("Support")
+  canVerifyUsers     Boolean              @default(false)
+  canBlockUsers      Boolean              @default(false)
+  canDeleteMessages  Boolean              @default(false)
+  canViewAnalytics   Boolean              @default(false)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  deletedAt          DateTime?
+  assignments        EmployeeAssignment[]
+
+  @@index([deletedAt])
+}
+
+model EmployeeAssignment {
+  id           String    @id @default(uuid())
+  employeeId   String
+  employee     Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  customerId   String
+  customer     User      @relation("AssignedCustomer", fields: [customerId], references: [id], onDelete: Cascade)
+  assignedAt   DateTime  @default(now())
+  status       String    @default("ACTIVE") // "ACTIVE", "COMPLETED"
+
+  @@unique([employeeId, customerId])
+  @@index([employeeId])
+  @@index([customerId])
+}
+
+model Conversation {
+  id             String     @id @default(uuid())
+  title          String     @default("Support Chat")
+  userId         String
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status         String     @default("ACTIVE") // "ACTIVE", "ARCHIVED"
+  isPinned       Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  lastActivityAt DateTime   @default(now())
+  deletedAt      DateTime?
+
+  messages       Message[]
+
+  @@index([userId])
+  @@index([updatedAt])
+  @@index([deletedAt])
+}
+
+model Message {
+  id                String       @id @default(uuid())
+  conversationId    String
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId          String
+  sender            User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  senderRole        String       @default("USER") // "USER", "EMPLOYEE", "ADMIN"
+  content           String
+  translatedContent String?      // Cached translation in user language
+  originalLanguage  String?      @default("en")
+  deliveryState     String       @default("SENT") // "SENT", "DELIVERED", "READ"
+  isRead            Boolean      @default(false)
+  readAt            DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  deletedAt         DateTime?
+
+  attachments       Attachment[]
+  audioMessage      AudioMessage?
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([createdAt])
+  @@index([deletedAt])
+}
+
+model Attachment {
+  id                 String   @id @default(uuid())
+  messageId          String
+  message            Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  filename           String
+  storageKey         String   @unique
+  fileKey            String   @unique
+  mimeType           String
+  sizeBytes          Int
+  url                String
+  isAudio            Boolean  @default(false)
+  protectedFromOwner Boolean  @default(false) // Files sent by Official Typnex side require ad-gate
+  checksum           String?
+  createdAt          DateTime @default(now())
+  deletedAt          DateTime?
+
+  @@index([messageId])
+  @@index([userId])
+  @@index([deletedAt])
+}
+
+model AudioMessage {
+  id              String   @id @default(uuid())
+  messageId       String   @unique
+  message         Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  durationSeconds Float
+  waveform        String?  // JSON stringified waveform amplitudes
+  audioUrl        String
+  createdAt       DateTime @default(now())
+}
+
+model DailyUsage {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dateKey      String    // "YYYY-MM-DD" in Asia/Kolkata IST
+  chatCount    Int       @default(0)
+  fileCount    Int       @default(0)
+  lastActionAt DateTime  @default(now())
+
+  @@unique([userId, dateKey])
+  @@index([userId, dateKey])
+}
+
+model SystemSettings {
+  id                       String   @id @default("global")
+  dailyChatLimit           Int      @default(100)
+  dailyFileLimit           Int      @default(20)
+  maxFileSizeMB            Int      @default(20)
+  allowedExtensions        String   @default("png,jpg,jpeg,gif,webp,svg,pdf,doc,docx,txt,csv,xlsx,ppt,pptx,zip,rar,mp3,wav,ogg,m4a")
+  disallowedExtensions     String   @default("mp4,mov,avi,mkv,webm,3gp,flv,wmv,exe,bat,cmd,ps1,sh,dll,scr,apk,msi,jar,vbs")
+  adGateEnabled            Boolean  @default(true)
+  adGateDurationSec        Int      @default(5)
+  interstitialIntervalHours Int     @default(12)
+  maintenanceMode          Boolean  @default(false)
+  announcementText         String?
+  updatedAt                DateTime @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String
+  actor      User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  actorEmail String
+  action     String   // e.g. "USER_VERIFIED", "USER_BLOCKED", "SYSTEM_SETTING_CHANGED"
+  targetType String   // "USER", "CONVERSATION", "MESSAGE", "SYSTEM", "EMPLOYEE"
+  targetId   String?
+  metadata   String?  // JSON formatted details
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  type      String   @default("SYSTEM") // "SYSTEM", "CHAT", "VERIFICATION", "ALERT"
+  isRead    Boolean  @default(false)
+  linkUrl   String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model TranslationCache {
+  id             String   @id @default(uuid())
+  sourceHash     String   @unique // SHA256 of sourceText + sourceLang + targetLang
+  sourceLanguage String
+  targetLanguage String
+  originalText   String
+  translatedText String
+  createdAt      DateTime @default(now())
+}

@@ -1,0 +1,137 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --glass-bg: rgba(255, 255, 255, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.55);
+    --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+    --bubble-user: rgba(219, 234, 254, 0.85); /* Tailwind blue-100 translucent */
+    --bubble-support: rgba(255, 255, 255, 0.90);
+    --text-primary: #0f172a;
+    --text-muted: #64748b;
+  }
+
+  .dark {
+    --glass-bg: rgba(15, 23, 42, 0.75);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
+    --bubble-user: rgba(30, 58, 138, 0.75); /* Dark blue glass */
+    --bubble-support: rgba(30, 41, 59, 0.85); /* Dark slate glass */
+    --text-primary: #f8fafc;
+    --text-muted: #94a3b8;
+  }
+}
+
+/* Liquid Glass Utilities */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+}
+
+.dark .glass-card {
+  background: rgba(30, 41, 59, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.4);
+}
+
+.glass-bubble-user {
+  background: var(--bubble-user);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(147, 197, 253, 0.4);
+}
+
+.glass-bubble-support {
+  background: var(--bubble-support);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
+}
+
+/* WhatsApp-Inspired Geometric Wallpaper */
+.whatsapp-wallpaper {
+  background-color: #f1f5f9;
+  background-image: 
+    radial-gradient(#cbd5e1 0.8px, transparent 0.8px),
+    radial-gradient(#94a3b8 0.8px, #f1f5f9 0.8px);
+  background-size: 32px 32px;
+  background-position: 0 0, 16px 16px;
+}
+
+.dark .whatsapp-wallpaper {
+  background-color: #0b1120;
+  background-image: 
+    radial-gradient(#1e293b 0.8px, transparent 0.8px),
+    radial-gradient(#1e293b 0.8px, #0b1120 0.8px);
+  background-size: 32px 32px;
+  background-position: 0 0, 16px 16px;
+}
+
+/* Blob Animations */
+@keyframes blob-slow {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(30px, -40px) scale(1.08);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.95);
+  }
+}
+
+@keyframes blob-reverse {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(-35px, 25px) scale(1.06);
+  }
+  66% {
+    transform: translate(25px, -30px) scale(0.94);
+  }
+}
+
+@keyframes blob-float {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  50% {
+    transform: translate(20px, -30px) scale(1.05);
+  }
+}
+
+.animate-blob-slow {
+  animation: blob-slow 18s ease-in-out infinite;
+}
+
+.animate-blob-reverse {
+  animation: blob-reverse 22s ease-in-out infinite;
+}
+
+.animate-blob-float {
+  animation: blob-float 15s ease-in-out infinite;
+}
+
+/* Accessibility: Respect Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .animate-blob-slow,
+  .animate-blob-reverse,
+  .animate-blob-float,
+  .animate-pulse {
+    animation: none !important;
+  }
+}
