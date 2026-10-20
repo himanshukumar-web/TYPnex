@@ -51,12 +51,11 @@ export async function POST(req: NextRequest) {
     // Check if email verified
     if (!user.emailVerified) {
       const otp = generateOTP();
-      await sendOtpToEmail(cleanEmail, otp, "SIGNUP");
+      await sendOtpToEmail(cleanEmail, otp, "LOGIN");
       return NextResponse.json({
         requiresVerification: true,
         email: cleanEmail,
-        message: "Please verify your email address to continue. We have sent an OTP.",
-        devOtp: process.env.NODE_ENV !== "production" ? otp : undefined,
+        message: "Please verify your email address to continue. We have sent a verification code to your email.",
       });
     }
 

@@ -4,9 +4,13 @@ import { verifyUserOTP } from "@/lib/auth/otp";
 import { signJwt } from "@/lib/auth/jwt";
 import { AUTH_COOKIE_NAME } from "@/lib/auth/session";
 import { createDefaultUserConversations } from "@/lib/chat/defaultConversations";
+import { enforceRateLimit } from "@/lib/security/rateLimiter";
 
 export async function POST(req: NextRequest) {
   try {
+    const rateLimitBlocked = enforceRateLimit(req, "AUTH_OTP");
+    if (rateLimitBlocked) return rateLimitBlocked;
+
     const body = await req.json();
     const { email, otp } = body;
 
@@ -15,10 +19,13 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const isValid = await verifyUserOTP(cleanEmail, otp.trim());
+    const verification = await verifyUserOTP(cleanEmail, otp.trim());
 
-    if (!isValid) {
-      return NextResponse.json({ error: "Invalid or expired OTP code. Please check and try again." }, { status: 400 });
+    if (!verification.valid) {
+      return NextResponse.json(
+        { error: verification.error || "Invalid or expired verification code." },
+        { status: 400 }
+      );
     }
 
     const user = await prisma.user.findUnique({
@@ -30,10 +37,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
 
-    // Step 2: Auto-create the 3 required default onboarding conversations in their selected language!
+    // Auto-create default onboarding conversations for first-time verification
     await createDefaultUserConversations(user.id, user.name, user.preferredLanguage || "en");
 
-    // Generate session token
+    // Generate authenticated session token
     const token = signJwt({
       userId: user.id,
       email: user.email,
@@ -44,7 +51,7 @@ export async function POST(req: NextRequest) {
 
     const response = NextResponse.json({
       success: true,
-      message: "Email successfully verified. Welcome to Typnex!",
+      message: "Email successfully verified. Welcome to TYPnex!",
       user: {
         id: user.id,
         email: user.email,
@@ -55,7 +62,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Set secure cookie
+    // Set secure session cookie
     response.cookies.set({
       name: AUTH_COOKIE_NAME,
       value: token,

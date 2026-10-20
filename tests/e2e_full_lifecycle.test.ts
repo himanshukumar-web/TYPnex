@@ -64,8 +64,8 @@ async function runE2ETests() {
   // OTP dispatch and verification
   const generatedOtp = generateOTP();
   await sendOtpToEmail(testUserEmail, generatedOtp, "SIGNUP");
-  const otpVerified = await verifyUserOTP(testUserEmail, generatedOtp);
-  assert(otpVerified === true, "Valid 6-digit OTP verified successfully");
+  const otpVerification = await verifyUserOTP(testUserEmail, generatedOtp);
+  assert(otpVerification.valid === true, "Valid 6-digit OTP verified successfully");
 
   // Password authentication
   const passwordValid = await comparePassword(rawPassword, hashedPassword);

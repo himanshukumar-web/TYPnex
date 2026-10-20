@@ -1,5 +1,6 @@
 import { hashPassword, comparePassword } from "../lib/auth/password";
-import { generateOTP, verifyUserOTP, sendOtpToEmail } from "../lib/auth/otp";
+import { generateOTP, verifyUserOTP, sendOtpToEmail, checkResendCooldown, hashOtp } from "../lib/auth/otp";
+import { normalizeAndValidatePhone } from "../lib/sms/smsService";
 import { signJwt, verifyJwt } from "../lib/auth/jwt";
 import { validateFile } from "../lib/files/fileService";
 import { defaultMalwareScanner, calculateChecksum } from "../lib/files/malwareScanner";
@@ -64,14 +65,35 @@ async function runTests() {
   });
 
   await sendOtpToEmail(testEmail, otp, "SIGNUP");
+
+  // Verify OTP is stored as 64-char SHA-256 hash in DB, not plaintext
+  const storedUser = await prisma.user.findUnique({ where: { id: tempUser.id } });
+  assert(storedUser?.otpCode?.length === 64, "OTP is stored as SHA-256 hash (64 hex chars), not plaintext");
+  assert(storedUser?.otpCode === hashOtp(otp), "Stored hash matches hashOtp(otp)");
+
+  // Resend cooldown test
+  const cooldownCheck = checkResendCooldown(testEmail, 60);
+  assert(!cooldownCheck.allowed && cooldownCheck.waitSeconds > 0, "Enforces 60-second cooldown immediately after send");
+
+  // Phone validation test (Indian +91 and international E.164)
+  const indianPhone = normalizeAndValidatePhone("9876543210");
+  assert(indianPhone.valid && indianPhone.normalized === "+919876543210", "Indian 10-digit mobile normalized to +919876543210");
+
+  const intlPhone = normalizeAndValidatePhone("+1 202 555 0123");
+  assert(intlPhone.valid && intlPhone.normalized === "+12025550123", "International US phone normalized to E.164");
+
+  const invalidPhone = normalizeAndValidatePhone("12345");
+  assert(!invalidPhone.valid, "Rejects malformed short phone number");
+
   const invalidOtpSuccess = await verifyUserOTP(testEmail, "000000");
-  assert(!invalidOtpSuccess, "incorrect OTP is rejected");
+  assert(!invalidOtpSuccess.valid, "incorrect OTP is rejected");
 
   const validOtpSuccess = await verifyUserOTP(testEmail, otp);
-  assert(validOtpSuccess, "valid OTP successfully verified and clears OTP token");
+  assert(validOtpSuccess.valid, "valid OTP successfully verified and clears OTP token");
 
   const verifiedUserRecord = await prisma.user.findUnique({ where: { id: tempUser.id } });
   assert(verifiedUserRecord?.emailVerified === true, "user emailVerified set to true");
+  assert(verifiedUserRecord?.otpCode === null, "OTP code invalidated after successful verification");
 
   // Test 3: JWT Session
   console.log("\n3. JWT SESSION ISSUANCE & VERIFICATION");

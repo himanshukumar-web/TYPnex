@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
-import { generateOTP, sendOtpToEmail } from "@/lib/auth/otp";
+import { generateOTP, sendOtpToEmail, sendOtpToPhoneNumber } from "@/lib/auth/otp";
+import { normalizeAndValidatePhone } from "@/lib/sms/smsService";
 import { ensureSystemSeeded } from "@/lib/seed";
-
 import { enforceRateLimit } from "@/lib/security/rateLimiter";
 
 export async function POST(req: NextRequest) {
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
 
     await ensureSystemSeeded();
     const body = await req.json();
-    const { name, email, password, confirmPassword, preferredLanguage } = body;
+    const { name, email, password, confirmPassword, preferredLanguage, phone } = body;
 
     if (!name || !email || !password) {
       return NextResponse.json({ error: "Name, email, and password are required." }, { status: 400 });
@@ -29,6 +29,16 @@ export async function POST(req: NextRequest) {
 
     const cleanEmail = email.trim().toLowerCase();
 
+    // Validate phone format if provided
+    let normalizedPhone: string | undefined;
+    if (phone && phone.trim()) {
+      const phoneVal = normalizeAndValidatePhone(phone);
+      if (!phoneVal.valid) {
+        return NextResponse.json({ error: phoneVal.error }, { status: 400 });
+      }
+      normalizedPhone = phoneVal.normalized;
+    }
+
     // Check if email already registered
     const existing = await prisma.user.findUnique({
       where: { email: cleanEmail },
@@ -38,33 +48,34 @@ export async function POST(req: NextRequest) {
       if (existing.emailVerified) {
         return NextResponse.json({ error: "An account with this email already exists." }, { status: 400 });
       }
-      // If user exists but not verified, update password and send new OTP
+      // If user exists but not verified, update password and issue fresh OTP
       const passwordHash = await hashPassword(password);
-      const otp = generateOTP();
       await prisma.user.update({
         where: { id: existing.id },
         data: {
           name: name.trim(),
           passwordHash,
           preferredLanguage: preferredLanguage || "en",
-          otpCode: otp,
-          otpExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
         },
       });
 
-      await sendOtpToEmail(cleanEmail, otp, "SIGNUP");
+      const otp = generateOTP();
+      const emailResult = await sendOtpToEmail(cleanEmail, otp, "SIGNUP");
+      if (normalizedPhone) {
+        await sendOtpToPhoneNumber(normalizedPhone, otp);
+      }
+
       return NextResponse.json({
         success: true,
         email: cleanEmail,
-        message: "Account created. Please verify the OTP sent to your email.",
-        devOtp: process.env.NODE_ENV !== "production" ? otp : undefined,
+        message: emailResult.success
+          ? "Account created. Please verify the 6-digit verification code sent to your email."
+          : "Account created. Verification code generated (ensure email delivery credentials are set).",
       });
     }
 
     // Create new unverified user
     const passwordHash = await hashPassword(password);
-    const otp = generateOTP();
-
     const user = await prisma.user.create({
       data: {
         name: name.trim(),
@@ -73,8 +84,6 @@ export async function POST(req: NextRequest) {
         preferredLanguage: preferredLanguage || "en",
         role: "USER",
         emailVerified: false,
-        otpCode: otp,
-        otpExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
         profile: {
           create: {
             themePreference: "light",
@@ -84,14 +93,19 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    await sendOtpToEmail(cleanEmail, otp, "SIGNUP");
+    const otp = generateOTP();
+    const emailResult = await sendOtpToEmail(cleanEmail, otp, "SIGNUP");
+    if (normalizedPhone) {
+      await sendOtpToPhoneNumber(normalizedPhone, otp);
+    }
 
     return NextResponse.json({
       success: true,
       email: cleanEmail,
       userId: user.id,
-      message: "Registration successful. Please verify the 6-digit OTP sent to your email.",
-      devOtp: process.env.NODE_ENV !== "production" ? otp : undefined,
+      message: emailResult.success
+        ? "Registration successful. Please enter the 6-digit verification code sent to your email."
+        : "Registration successful. Verification code generated.",
     });
   } catch (error) {
     console.error("Register error:", error);
