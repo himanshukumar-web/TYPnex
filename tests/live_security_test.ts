@@ -5,7 +5,7 @@ async function runLiveSecurityTests() {
   console.log("   TYPnex Live Endpoint & Security Audit Suite");
   console.log("=======================================================\n");
 
-  const baseUrl = process.env.TEST_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const baseUrl = (process.env.TEST_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/+$/, "");
   let passed = 0;
   let failed = 0;
 

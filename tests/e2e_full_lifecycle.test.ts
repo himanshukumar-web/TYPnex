@@ -14,6 +14,8 @@ import {
   incrementUserFileCount,
 } from "../lib/limits/istDate";
 import { createDefaultUserConversations } from "../lib/chat/defaultConversations";
+import { NextRequest } from "next/server";
+import { middleware } from "../middleware";
 import { ensureSystemSeeded } from "../lib/seed";
 import prisma from "../lib/db";
 
@@ -92,19 +94,48 @@ async function runE2ETests() {
   const employeeUser = await prisma.user.findFirst({ where: { role: "EMPLOYEE" } });
 
   assert(Boolean(adminUser && adminUser.role === "ADMIN"), "Admin account has full administrative privileges");
-  assert(Boolean(employeeUser && employeeUser.role === "EMPLOYEE"), "Employee account has staff support privileges");
+  // Test real Next.js middleware guards directly
+  const adminReqWithUser = new NextRequest("http://localhost:3000/api/admin/settings", {
+    headers: { cookie: `typnex_auth_token=${sessionToken}` },
+  });
+  const resAdminWithUser = await middleware(adminReqWithUser);
+  assert(resAdminWithUser.status === 403, "Real middleware denies USER access to /api/admin/settings (403)");
 
-  function evaluateRoutePermission(role: string, targetPath: string): boolean {
-    if (targetPath.startsWith("/api/admin")) return role === "ADMIN";
-    if (targetPath.startsWith("/api/employee")) return role === "ADMIN" || role === "EMPLOYEE";
-    return true; // Public or customer paths
-  }
+  const unauthReq = new NextRequest("http://localhost:3000/api/admin/settings");
+  const resUnauth = await middleware(unauthReq);
+  assert(resUnauth.status === 401, "Real middleware denies unauthenticated request with 401");
 
-  assert(evaluateRoutePermission("USER", "/api/admin/settings") === false, "USER denied access to /api/admin/settings");
-  assert(evaluateRoutePermission("EMPLOYEE", "/api/admin/settings") === false, "EMPLOYEE denied access to /api/admin/settings");
-  assert(evaluateRoutePermission("ADMIN", "/api/admin/settings") === true, "ADMIN granted access to /api/admin/settings");
-  assert(evaluateRoutePermission("USER", "/api/employee/users") === false, "USER denied access to /api/employee/users");
-  assert(evaluateRoutePermission("EMPLOYEE", "/api/employee/users") === true, "EMPLOYEE granted access to /api/employee/users");
+  const adminToken = signJwt({
+    userId: adminUser!.id,
+    email: adminUser!.email,
+    name: adminUser!.name,
+    role: "ADMIN",
+    isVerified: true,
+  });
+  const adminReqWithAdmin = new NextRequest("http://localhost:3000/api/admin/settings", {
+    headers: { cookie: `typnex_auth_token=${adminToken}` },
+  });
+  const resAdminWithAdmin = await middleware(adminReqWithAdmin);
+  assert(resAdminWithAdmin.status === 200, "Real middleware allows ADMIN access to /api/admin/settings (200)");
+
+  const empReqWithUser = new NextRequest("http://localhost:3000/api/employee/users", {
+    headers: { cookie: `typnex_auth_token=${sessionToken}` },
+  });
+  const resEmpWithUser = await middleware(empReqWithUser);
+  assert(resEmpWithUser.status === 403, "Real middleware denies USER access to /api/employee/users (403)");
+
+  const empToken = signJwt({
+    userId: employeeUser!.id,
+    email: employeeUser!.email,
+    name: employeeUser!.name,
+    role: "EMPLOYEE",
+    isVerified: true,
+  });
+  const empReqWithEmp = new NextRequest("http://localhost:3000/api/employee/users", {
+    headers: { cookie: `typnex_auth_token=${empToken}` },
+  });
+  const resEmpWithEmp = await middleware(empReqWithEmp);
+  assert(resEmpWithEmp.status === 200, "Real middleware allows EMPLOYEE access to /api/employee/users (200)");
 
   // -------------------------------------------------------------------------
   // 3. PRIVATE USER-TO-SUPPORT MESSAGING & CHAT HISTORY
@@ -271,6 +302,7 @@ async function runE2ETests() {
   // -------------------------------------------------------------------------
   // 9. CLEANUP TEST DATA
   // -------------------------------------------------------------------------
+  await prisma.conversation.deleteMany({ where: { userId: user.id } });
   await prisma.user.delete({ where: { id: user.id } });
 
   console.log("\n=======================================================================");
