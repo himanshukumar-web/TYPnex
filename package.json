@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "tsx tests/typnex.test.ts",
+    "test:e2e": "tsx tests/e2e_full_lifecycle.test.ts",
     "test:security": "tsx tests/live_security_test.ts",
     "postinstall": "prisma generate"
   },
