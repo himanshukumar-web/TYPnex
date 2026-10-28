@@ -54,9 +54,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      emailDelivery: emailResult,
+      retryAfter: 60,
       message: emailResult.success
         ? "A new verification code has been sent to your email."
-        : "A new verification code was generated.",
+        : `A new verification code was generated. Note: Email delivery unavailable (${emailResult.error || "Email provider credentials not configured"}).`,
+      devOtp: process.env.NODE_ENV !== "production" ? otp : undefined,
     });
   } catch (error) {
     console.error("Resend OTP error:", error);

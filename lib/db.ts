@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
+  inMemoryStore?: InMemoryDbStore;
 };
 
 // =========================================================================
@@ -37,6 +38,41 @@ class InMemoryDbStore {
     return this.tables.get(key)!;
   }
 
+  private enrichItem(model: string, item: any, include?: Record<string, any>) {
+    if (!item) return null;
+    const copy = { ...item };
+    if (!include) return copy;
+
+    const mKey = model.toLowerCase();
+    if (mKey === "user") {
+      if (include.profile) {
+        const profTable = this.getTable("profile");
+        copy.profile = Array.from(profTable.values()).find((p) => p.userId === item.id) || item.profile || null;
+      }
+      if (include.employeeRecord) {
+        const empTable = this.getTable("employee");
+        copy.employeeRecord = Array.from(empTable.values()).find((e) => e.userId === item.id) || item.employeeRecord || null;
+      }
+      if (include.blockedRecord) {
+        const blkTable = this.getTable("blockeduser");
+        copy.blockedRecord = Array.from(blkTable.values()).find((b) => b.userId === item.id) || item.blockedRecord || null;
+      }
+    } else if (mKey === "conversation") {
+      if (include.messages) {
+        const msgTable = this.getTable("message");
+        let msgs = Array.from(msgTable.values()).filter((m) => m.conversationId === item.id);
+        if (include.messages.orderBy?.createdAt === "desc") {
+          msgs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        }
+        if (include.messages.take) {
+          msgs = msgs.slice(0, include.messages.take);
+        }
+        copy.messages = msgs;
+      }
+    }
+    return copy;
+  }
+
   create(model: string, args: { data: Record<string, any> }) {
     const table = this.getTable(model);
     const id = args.data.id || uuidv4();
@@ -47,44 +83,96 @@ class InMemoryDbStore {
       updatedAt: new Date(),
     };
     table.set(id, item);
+
+    // Handle nested relation creation in in-memory store
+    const mKey = model.toLowerCase();
+    if (mKey === "user") {
+      if (args.data.profile?.create) {
+        const pTable = this.getTable("profile");
+        const pId = uuidv4();
+        pTable.set(pId, {
+          id: pId,
+          userId: id,
+          ...args.data.profile.create,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+      if (args.data.employeeRecord?.create) {
+        const eTable = this.getTable("employee");
+        const eId = uuidv4();
+        eTable.set(eId, {
+          id: eId,
+          userId: id,
+          ...args.data.employeeRecord.create,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+    } else if (mKey === "conversation") {
+      if (args.data.messages?.create && Array.isArray(args.data.messages.create)) {
+        const msgTable = this.getTable("message");
+        for (const m of args.data.messages.create) {
+          const msgId = uuidv4();
+          msgTable.set(msgId, {
+            id: msgId,
+            conversationId: id,
+            ...m,
+            createdAt: m.createdAt || new Date(),
+            updatedAt: new Date(),
+          });
+        }
+      }
+    }
+
     return item;
   }
 
-  findUnique(model: string, args: { where: Record<string, any> }) {
+  findUnique(model: string, args: { where: Record<string, any>; include?: Record<string, any> }) {
     const table = this.getTable(model);
     const where = args.where;
+    let found: any = null;
+
     if (where.id && table.has(where.id)) {
-      return table.get(where.id);
-    }
-    if (where.userId_dateKey) {
+      found = table.get(where.id);
+    } else if (where.userId_dateKey) {
       const { userId, dateKey } = where.userId_dateKey;
       for (const item of table.values()) {
-        if (item.userId === userId && item.dateKey === dateKey) return item;
+        if (item.userId === userId && item.dateKey === dateKey) {
+          found = item;
+          break;
+        }
       }
-      return null;
+    } else {
+      for (const item of table.values()) {
+        const match = Object.entries(where).every(([k, v]) => item[k] === v);
+        if (match) {
+          found = item;
+          break;
+        }
+      }
     }
-    for (const item of table.values()) {
-      const match = Object.entries(where).every(([k, v]) => item[k] === v);
-      if (match) return item;
-    }
-    return null;
+
+    return this.enrichItem(model, found, args.include);
   }
 
-  findFirst(model: string, args: { where?: Record<string, any> }) {
+  findFirst(model: string, args?: { where?: Record<string, any>; include?: Record<string, any> }) {
     const table = this.getTable(model);
     if (!args?.where) {
       const first = table.values().next();
-      return first.done ? null : first.value;
+      return this.enrichItem(model, first.done ? null : first.value, args?.include);
     }
     const where = args.where;
     for (const item of table.values()) {
       const match = Object.entries(where).every(([k, v]) => item[k] === v);
-      if (match) return item;
+      if (match) {
+        return this.enrichItem(model, item, args.include);
+      }
     }
     return null;
   }
 
-  findMany(model: string, args?: { where?: Record<string, any>; take?: number }) {
+  findMany(model: string, args?: { where?: Record<string, any>; take?: number; orderBy?: any; include?: Record<string, any> }) {
     const table = this.getTable(model);
     let items = Array.from(table.values());
     if (args?.where) {
@@ -98,10 +186,26 @@ class InMemoryDbStore {
         });
       });
     }
+
+    if (args?.orderBy) {
+      const orderBys = Array.isArray(args.orderBy) ? args.orderBy : [args.orderBy];
+      items.sort((a, b) => {
+        for (const order of orderBys) {
+          for (const [key, dir] of Object.entries(order)) {
+            const valA = a[key] instanceof Date ? a[key].getTime() : a[key];
+            const valB = b[key] instanceof Date ? b[key].getTime() : b[key];
+            if (valA < valB) return dir === "asc" ? -1 : 1;
+            if (valA > valB) return dir === "asc" ? 1 : -1;
+          }
+        }
+        return 0;
+      });
+    }
+
     if (args?.take) {
       items = items.slice(0, args.take);
     }
-    return items;
+    return items.map((it) => this.enrichItem(model, it, args?.include));
   }
 
   update(model: string, args: { where: Record<string, any>; data: Record<string, any> }) {
@@ -177,7 +281,10 @@ class InMemoryDbStore {
   }
 }
 
-const inMemoryStore = new InMemoryDbStore();
+const inMemoryStore = globalForPrisma.inMemoryStore ?? new InMemoryDbStore();
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.inMemoryStore = inMemoryStore;
+}
 
 function createResilientPrismaClient(): PrismaClient {
   const connectionString =

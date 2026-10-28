@@ -51,11 +51,15 @@ export async function POST(req: NextRequest) {
     // Check if email verified
     if (!user.emailVerified) {
       const otp = generateOTP();
-      await sendOtpToEmail(cleanEmail, otp, "LOGIN");
+      const emailResult = await sendOtpToEmail(cleanEmail, otp, "LOGIN");
       return NextResponse.json({
         requiresVerification: true,
         email: cleanEmail,
-        message: "Please verify your email address to continue. We have sent a verification code to your email.",
+        emailDelivery: emailResult,
+        message: emailResult.success
+          ? "Please verify your email address to continue. We have sent a verification code to your email."
+          : `Please verify your email address. Note: Email delivery unavailable (${emailResult.error || "Email provider credentials not configured"}).`,
+        devOtp: process.env.NODE_ENV !== "production" ? otp : undefined,
       });
     }
 

@@ -68,9 +68,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         email: cleanEmail,
+        emailDelivery: emailResult,
         message: emailResult.success
           ? "Account created. Please verify the 6-digit verification code sent to your email."
-          : "Account created. Verification code generated (ensure email delivery credentials are set).",
+          : `Account created. Note: Email delivery unavailable (${emailResult.error || "Email provider credentials not configured"}).`,
+        devOtp: process.env.NODE_ENV !== "production" ? otp : undefined,
       });
     }
 
@@ -103,9 +105,11 @@ export async function POST(req: NextRequest) {
       success: true,
       email: cleanEmail,
       userId: user.id,
+      emailDelivery: emailResult,
       message: emailResult.success
         ? "Registration successful. Please enter the 6-digit verification code sent to your email."
-        : "Registration successful. Verification code generated.",
+        : `Registration successful. Note: Email delivery unavailable (${emailResult.error || "Email provider credentials not configured"}).`,
+      devOtp: process.env.NODE_ENV !== "production" ? otp : undefined,
     });
   } catch (error) {
     console.error("Register error:", error);

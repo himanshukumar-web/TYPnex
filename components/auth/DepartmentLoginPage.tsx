@@ -73,15 +73,18 @@ export function DepartmentLoginPage() {
         )}
 
         {/* Form */}
-        <form onSubmit={handleDepartmentLogin} className="space-y-4">
+        <form id="department-login-form" onSubmit={handleDepartmentLogin} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
+            <label htmlFor="department-email" className="block text-xs font-semibold text-slate-300 mb-1">
               Staff Email Address
             </label>
             <div className="relative">
               <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
               <input
+                id="department-email"
+                name="email"
                 type="email"
+                autoComplete="username email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@typnex.com"
@@ -92,13 +95,16 @@ export function DepartmentLoginPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
+            <label htmlFor="department-password" className="block text-xs font-semibold text-slate-300 mb-1">
               Department Password
             </label>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
               <input
+                id="department-password"
+                name="password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••••"
@@ -109,6 +115,7 @@ export function DepartmentLoginPage() {
           </div>
 
           <button
+            id="department-submit-btn"
             type="submit"
             disabled={loading}
             className="w-full mt-2 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-blue-500/25 disabled:opacity-40 transition-all flex items-center justify-center gap-2"
